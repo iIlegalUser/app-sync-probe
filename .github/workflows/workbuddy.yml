@@ -46,6 +46,19 @@ jobs:
           WORKBUDDY_MP_GAP: ${{ secrets.WORKBUDDY_MP_GAP }}
         run: python workbuddy_daily.py
 
+      # 🌍 国际版（www.workbuddy.ai）每日活跃：探测 → 领取 → 免费模型保活
+      # 与国际版登录态分开配置：WORKBUDDY_INTL_TOKENS = 备注|AT|uid|RT（RT 可续期）
+      - name: Run WorkBuddy AI (international)
+        if: always()
+        continue-on-error: true
+        env:
+          WORKBUDDY_INTL_TOKENS: ${{ secrets.WORKBUDDY_INTL_TOKENS }}
+          WORKBUDDY_INTL_MODELS: ${{ secrets.WORKBUDDY_INTL_MODELS }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          QYWX_TOKEN: ${{ secrets.QYWX_TOKEN }}
+          NO_NOTIFY: ${{ secrets.NO_NOTIFY }}
+        run: python workbuddy_intl_daily.py
+
       # ⚠️ 仅在【私有仓库】中持久化令牌状态；公开仓库会跳过，避免 RT 泄露
       - name: Persist token state (private repo only)
         if: always() && github.event.repository.private == true
