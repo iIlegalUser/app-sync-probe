@@ -1,5 +1,14 @@
 # 更新日志
 
+## v3.8（2026-10-16）
+
+- 新增：`credits_report.py` 积分余额与到期时间报告（国内 / 国际版）：
+  - 余额组成 + 逐笔到期时间（月度套餐月底清零、活动赠送 30 天逐笔到期）；
+  - 支持 Bark / WxPusher 推送与到期预警窗口。
+- 新增：`daily_forward.py` 可选工具：读取 Actions 运行日志、重建签到报告并按需转发（社区贡献 #25，感谢 @wuge0）。
+- 新增：WxPusher（微信）内置推送渠道，配置 `WXPUSHER_APP_TOKEN` + `WXPUSHER_UID` 即启用（社区贡献 #25）。
+- 文档：README 环境变量表、目录结构与可选工具说明同步更新。
+
 ## v3.7（2026-10-11）
 
 - 新增：国际版设备授权登录工具 `workbuddy_intl_login.py`（适配 Google / GitHub / X 注册的纯 OAuth 账号，免手机号）：
