@@ -71,4 +71,38 @@ jobs:
           else
             git commit -m "chore: 更新令牌状态 [skip ci]"
             git push
+
+  # 🔄 自动同步上游（L0NE-6 → 本 fork）
+  # 串在签到 job 之后：令牌持久化与同步都要 push，串行可避开并发 non-fast-forward
+  sync-upstream:
+    needs: run
+    if: always()            # 签到失败/跳过也要同步，避免卡在上游进度之外
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # merge 需要完整历史
+
+      - name: Merge upstream
+        env:
+          UPSTREAM: L0NE-6/WorkBuddy-Daily
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM}.git"
+          git fetch upstream main
+
+          NEW=$(git rev-list --count "HEAD..upstream/main")
+          if [ "$NEW" = "0" ]; then
+            echo "✅ 已与上游齐平，无需同步"
+            exit 0
           fi
+          echo "📥 上游领先 ${NEW} 个提交，开始合并"
+
+          # fork 特有：workbuddy.yml 的国际版步骤、wb_refresh_tokens.json
+          # 与上游处于不同区段/文件，正常不会冲突；一旦冲突则失败并告警，交由人工处理
+          git merge upstream/main --no-edit -m "chore: 同步上游 ${UPSTREAM}"
+          git push origin HEAD:main
