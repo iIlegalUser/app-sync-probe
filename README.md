@@ -41,11 +41,14 @@
 
 1. 探测活动是否开放、今天是否已领（`/billing/meter/checkin-activity-status`）；
 2. 开放且未领时领取每日奖励（`/v2/billing/meter/daily-checkin`）；
-3. 发一次最小流式对话完成**活跃保活**（免费模型，不消耗积分）。
+3. 活跃三件事（互补）：
+   - **活跃上报** `POST /v2/report` → 点亮成长中心的「连登」（并回读连登天数）；
+   - **保活对话** `POST /v2/chat/completions` → 维持「账号有调用」（免费模型，不消耗积分）；
+   - **网页会话** `POST /console/as/conversations/` → 上游「当日活跃」计数只认这一发。
 
 ```bash
-python workbuddy_intl_daily.py                      # 探测 + 领取 + 保活
-python workbuddy_intl_daily.py --no-keepalive       # 只探测与领取
+python workbuddy_intl_daily.py                      # 探测 + 领取 + 活跃（上报 / 保活 / 网页会话）
+python workbuddy_intl_daily.py --no-keepalive       # 只探测、领取与上报，不发保活对话与网页会话
 python workbuddy_intl_daily.py --only 1             # 只跑第一个账号
 ```
 
@@ -58,7 +61,8 @@ python workbuddy_intl_daily.py --only 1             # 只跑第一个账号
 
 > ⚠️ 国际版登录态与国内版不通用：`workbuddy.ai` 的令牌在 `copilot.tencent.com` 刷不了，反之亦然。
 > 带上 `refresh_token` 时脚本会自动续期并写回 `wb_intl_tokens.json`；只给 AT 时按短期令牌使用。
-> 活动未开放属于正常状态，不会当成失败；保活成功与领取成功分开报告。
+> 活动未开放属于正常状态，不会当成失败；签到成功与活跃结果分开报告，任一发失败都不会把签到判成失败。
+> 活动未开启但活跃上报 / 网页会话成功时，会按「今日活跃已完成」报告（积分由上游异步发放）。
 
 ## 🚀 部署方式一：青龙面板（三步）
 
@@ -407,6 +411,10 @@ python daily_forward.py daily.log --wx
 
 抽奖 · 盲盒 · Buddy 信息 · 派猫猫旅行 · 连签兑换 · 补签卡 · 礼包补偿 · 徽章
 
+> 🔁 **连登管家**：固定按「补签 → 档位兑换 → 抽奖」执行，兑换新增的抽奖次数会在同一轮用完。
+>
+> 🐾 **猫猫旅行**：到达后领奖成功会继续检查状态，满足条件时当轮直接派出下一趟。
+
 ### 🔹 其他
 
 每日签到（`/v2/billing/meter/daily-checkin`，独立于成长任务，自动完成）
@@ -540,6 +548,17 @@ WorkBuddy-Daily/
 ├── LICENSE                      # MIT 许可证
 └── README.md
 ```
+
+---
+
+## 🏢 企业版账号说明
+
+企业版账号（桌面端认证文件里带非空 `enterpriseId`）**没有个人成长体系**：上游对签到一律返回
+`400 code 10001`「企业账号不支持该操作」，成长域端点一律 `403`「growth system is only
+available for personal users」（2026-10-07 实测口径）。脚本会**自动识别并跳过**签到与全部
+成长/互动任务，只做令牌续期与查询，不再把这种情况误报成「凭据失效」。
+
+> 企业额度不在个人「资源包」体系内（`get-user-resource*` 对企业号返回空 `Accounts`），请在企业后台查询。
 
 ---
 
