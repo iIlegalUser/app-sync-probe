@@ -71,6 +71,7 @@ jobs:
           else
             git commit -m "chore: 更新令牌状态 [skip ci]"
             git push
+          fi
 
   # 🔄 自动同步上游（L0NE-6 → 本 fork）
   # 串在签到 job 之后：令牌持久化与同步都要 push，串行可避开并发 non-fast-forward
