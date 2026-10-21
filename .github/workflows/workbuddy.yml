@@ -58,20 +58,9 @@ jobs:
           WORKBUDDY_MAKEUP_MAX_PER_RUN: ${{ secrets.WORKBUDDY_MAKEUP_MAX_PER_RUN }}
         run: python workbuddy_daily.py
 
-      # 🌍 国际版（www.workbuddy.ai）每日活跃：探测 → 领取 → 免费模型保活
-      # 与国际版登录态分开配置：WORKBUDDY_INTL_TOKENS = 备注|AT|uid|RT（RT 可续期）
-      - name: Run WorkBuddy AI (international)
-        if: always()
-        continue-on-error: true
-        env:
-          WORKBUDDY_INTL_TOKENS: ${{ secrets.WORKBUDDY_INTL_TOKENS }}
-          WORKBUDDY_INTL_MODELS: ${{ secrets.WORKBUDDY_INTL_MODELS }}
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-          QYWX_TOKEN: ${{ secrets.QYWX_TOKEN }}
-          NO_NOTIFY: ${{ secrets.NO_NOTIFY }}
-        run: python workbuddy_intl_daily.py
-
       # ⚠️ 仅在【私有仓库】中持久化令牌/福利期次状态；公开仓库会跳过，避免 RT 泄露
+      # ⚠️ fork 约定：本步骤必须紧贴上游原文（名称、位置、内容都不改），国际版步骤一律放在它之后。
+      #    上游 v3.15 曾在此处重命名+加文件，与夹在中间的 fork 步骤撞成内容冲突，导致 sync-upstream 失败。
       - name: Persist runtime state (private repo only)
         if: always() && github.event.repository.private == true
         run: |
@@ -85,6 +74,21 @@ jobs:
             git commit -m "chore: 更新运行状态 [skip ci]"
             git push
           fi
+
+      # ---- 以下为 fork 特有步骤，与上游不重叠；新增上游同步内容时请保持放在这一区段 ----
+
+      # 🌍 国际版（www.workbuddy.ai）每日活跃：探测 → 领取 → 免费模型保活
+      # 与国际版登录态分开配置：WORKBUDDY_INTL_TOKENS = 备注|AT|uid|RT（RT 可续期）
+      - name: Run WorkBuddy AI (international)
+        if: always()
+        continue-on-error: true
+        env:
+          WORKBUDDY_INTL_TOKENS: ${{ secrets.WORKBUDDY_INTL_TOKENS }}
+          WORKBUDDY_INTL_MODELS: ${{ secrets.WORKBUDDY_INTL_MODELS }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          QYWX_TOKEN: ${{ secrets.QYWX_TOKEN }}
+          NO_NOTIFY: ${{ secrets.NO_NOTIFY }}
+        run: python workbuddy_intl_daily.py
 
   # 🔄 自动同步上游（L0NE-6 → 本 fork）
   # 串在签到 job 之后：令牌持久化与同步都要 push，串行可避开并发 non-fast-forward
@@ -116,7 +120,7 @@ jobs:
           fi
           echo "📥 上游领先 ${NEW} 个提交，开始合并"
 
-          # fork 特有：workbuddy.yml 的国际版步骤、wb_refresh_tokens.json
-          # 与上游处于不同区段/文件，正常不会冲突；一旦冲突则失败并告警，交由人工处理
+          # fork 特有内容（国际版步骤、wb_refresh_tokens.json）一律排在「Persist runtime state」
+          # 之后，与上游改动的区段不重叠，正常不会冲突；万一冲突则失败并告警，交由人工处理
           git merge upstream/main --no-edit -m "chore: 同步上游 ${UPSTREAM}"
           git push origin HEAD:main
