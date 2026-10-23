@@ -1,5 +1,22 @@
 # 更新日志
 
+## v3.17（2026-10-23）
+
+- 修复网页真实对话只建会话、不收尾的问题：成功轮次调用 `POST /console/webchat/conversations/{id}/stop`，失败轮次再调用 `/delete`，释放上游活跃会话名额。
+- 检测 HTTP 429 / code `10105` 的活跃会话上限；触发时先停止同任务前缀的最旧活跃会话，最多保留 8 条，再重建一次。
+- 清理动作全程 best-effort，收尾失败不会把已经完成的对话改判为失败。
+- 每日活跃真实对话兜底、专家/技能/夜猫子/旅行等所有 `webchat2` 调用都会自动收尾，避免跑满 10 条后永久报 10105。
+
+## v3.16（2026-10-22）
+
+- 按 10-22 双版本真机抓包，清理任务上报体中的 `wb2api-*`、`wbmp-*`、`wb-daily-*` 等自证前缀。
+- 会话 ID 改为官方形态：`conversationId` 使用 UUID v4，`requestId` 使用 32 hex 毫秒前缀 ID；小程序/桌面合成事件同步修正。
+- 桌面指纹对齐国内版 5.8.3：更新 UA、ideVersion/extVersion、commit、releaseDate、osVersion、CPU 型号/核数和内存，并补 `qimei36`。
+- 桌面 `/v2/report` 的 `X-Domain` 改为裸主机名 `copilot.tencent.com`，`X-Request-ID` 改为官方 32 hex 形态。
+- 小程序公共 base 版本更新到 2.4.0；专家/灵感事件仍按官方发射点保留 2.2.8。
+- 每日活跃改为以热力图 `score > 0` 为成功判据；HTTP 200 不再直接写当天完成标记。未计分时默认补一次真实对话再回读，仍失败则下轮重试。
+- 签到业务码 `10001` 改为先回读 `today_checked_in`，只有状态确认已签才报成功。
+
 ## v3.15（2026-10-21）
 
 - 领奖改为按 `progress.current >= progress.target` 扫描，修复任务已达标但 `accept_status` 尚未变为 `completed` 时永远不领的问题。
