@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🌱 WorkBuddy Daily - 全能签到脚本 v3.17
+🌱 WorkBuddy Daily - 全能签到脚本 v3.19
 ════════════════════════════════════════════════════════════════
 
 📌 这是什么
    一个脚本搞定 WorkBuddy 全部自动化：Token 自动续期、积分/用量查询、
-   18 项成长任务、8 项互动玩法、小程序成长任务、
+   22 项成长任务、8 项互动玩法、小程序成长任务、
    自动领奖，全部无人值守。
 
 ✨ 特性
    🔐 Token 永续     只配一个刷新令牌变量，脚本自动续期（90 天滚动，永不过期）
-   ✅ 成长任务       17 项云端任务全覆盖（含轻量云专家；小程序链式见下一行）
+   ✅ 成长任务       22 项云端任务全覆盖（含专家体验任务；小程序链式见下一行）
    📱 小程序任务     Tasks_1~7 链式任务（每日零点解锁一环，日志给出解锁日期）
    🎮 8 项互动玩法   抽奖、盲盒、Buddy、派猫猫旅行、连签兑换、补签卡、礼包补偿、徽章
    💰 三类查询       积分套餐（剩余/总量/已用）、用量统计、成长数据（等级/连签/能量）
@@ -101,11 +101,12 @@
    ⚠️ RT 是你唯一的续期凭据，泄露了别人就能操作你的账号
 
 📦 任务清单
-   ☁️ 成长中心任务（17 项，云端 + 桌面）
+   ☁️ 成长中心任务（22 项，云端 + 桌面）
       每日签到 · 设计创意模式 · 探索优秀灵感 · 桌面端对话 · 尝鲜热门技能
       体验资料库 · 腾讯轻量云专家 · 和平精英主题 · 发现应用 · 企鹅教师助手
       GLM-5.2模型对话 · 和AI聊天5次 · 夜猫子活动 · 召唤3次专家团 · 召唤5次专家
-      使用5个模板 · 设置自动化任务 · 领取Buddy
+      使用5个模板 · 设置自动化任务 · 领取Buddy · 无畏契约拼豆专家
+      中国电商运营专家 · 抖音策略师 · 商家宣传页与海报设计师 · 直播电商教练
    📱 小程序成长任务（7 项，需 X-Client-Platform: miniprogram 头）
       Sequential_Tasks_1 完成 1 次对话（+100c+5e）
       Sequential_Tasks_2 选中专家并完成对话（+200c+5e）
@@ -128,7 +129,8 @@
    · 桌面任务：Windows 走真实桌面换血；非 Windows 自动降级为指纹上报（无需真实桌面端）
    · 夜猫子：官方规则为「每日 1 次 × 累计 3 天」，有响应即停，不空跑
    · accept 校验：解析接口逐任务状态 + 回读验证，未落账的自动逐个重试
-   · 进度补领：桌面与小程序任务都按 progress 达标补领，不依赖会延迟/回滚的 accept_status
+   · 进度补领：任务动作前先预扫一次，全部完成后再次清扫；桌面与小程序都按 progress
+     达标补领，不依赖会延迟/回滚的 accept_status
    · 签到判定：先查 activity-status，仅在活动期且今日未签时领取；空回执不再写成成功
    · 前置依赖：accept 报 prerequisite not met 时先补跑前置任务（如先领养首只 Buddy）再重试
    · 真实会话 id：专家/技能任务的 requestId/messageId 取自真实对话的服务端消息 id（cmb- 形态）
@@ -176,6 +178,7 @@
    脚本不含任何账号、手机号、Token 或设备信息，所有凭据均由环境变量注入。
 """
 import sys, os, re, json, math, time, uuid, base64, glob, hashlib, hmac, glob as _glob, shutil, subprocess, threading, queue
+from urllib.parse import parse_qs, urlparse
 import requests
 
 
@@ -225,6 +228,10 @@ TASK_NAME_CN = {
     "automation_1": "设置自动化任务",
     "workstation_expert": "工作台搭建师",
     "WorkBuddy_Valorant": "无畏契约拼豆专家",
+    "expert_use_maidehao": "中国电商运营专家",
+    "expert_use_douyinyin": "抖音策略师",
+    "expert_use_shangjia_xuanchuan": "商家宣传页与海报设计师",
+    "expert_use_bowangwang": "直播电商教练",
     "wb_wechat_oa_subscribe_task": "关注公众号",
     "Sequential_Tasks_1": "小程序对话",
     "Sequential_Tasks_2": "小程序专家对话",
@@ -242,8 +249,93 @@ MP_TASK_CODES = {
     "Sequential_Tasks_7", "school_season",
 }
 
+EXPERT_TASK_SPECS = {
+    "expert_use_maidehao": {
+        "id": "ex_GDl31WahyIH0",
+        "name": "中国电商运营专家",
+        "version": "1.0.1",
+        "slug": "maidehao",
+    },
+    "expert_use_douyinyin": {
+        "id": "ex_FbY5nlWTqDod",
+        "name": "抖音策略师",
+        "version": "1.0.0",
+        "slug": "douyinyin",
+    },
+    "expert_use_shangjia_xuanchuan": {
+        "id": "ex_Weo3x2EZuSDm",
+        "name": "商家宣传页与海报设计师",
+        "version": "1.0.0",
+        "slug": "shangjia-xuanchuan",
+    },
+    "expert_use_bowangwang": {
+        "id": "ex_WZY136wV5aMt",
+        "name": "直播电商教练",
+        "version": "1.0.0",
+        "slug": "bowangwang",
+    },
+}
+DESKTOP_ONLY_TASK_CODES = frozenset(EXPERT_TASK_SPECS) | {
+    "Expert_lighthouse", "WorkBuddy_Valorant",
+}
+_EXPERT_ID_RE = re.compile(r"^ex_[A-Za-z0-9]{6,64}$")
+_TRUSTED_JUMP_HOST_SUFFIXES = ("workbuddy.cn", "codebuddy.cn", "tencent.com")
+
+
 def task_cn(code):
     return TASK_NAME_CN.get(code, code)
+
+
+def _parse_expert_deeplink(value):
+    """只接受 workbuddy://experts?expertId=ex_xxx 这一种专家深链。"""
+    try:
+        parsed = urlparse(value)
+        if parsed.scheme.lower() != "workbuddy":
+            return ""
+        if parsed.netloc.lower() != "experts" or parsed.path not in ("", "/"):
+            return ""
+        if parsed.fragment:
+            return ""
+        ids = parse_qs(parsed.query, keep_blank_values=True).get("expertId", [])
+        unique = {item.strip() for item in ids if item.strip()}
+        if len(ids) != 1 or len(unique) != 1:
+            return ""
+        expert_id = unique.pop()
+        return expert_id if _EXPERT_ID_RE.fullmatch(expert_id) else ""
+    except (TypeError, ValueError):
+        return ""
+
+
+def _expert_id_from_jump_url(jump_url):
+    """从任务 jump_url 的 deeplink 参数提取专家 ID，不接受任意 URL 内嵌值。"""
+    if not isinstance(jump_url, str):
+        return ""
+    raw = jump_url.strip()
+    if not raw:
+        return ""
+    direct = _parse_expert_deeplink(raw)
+    if direct:
+        return direct
+    if raw.lower().startswith("deeplink="):
+        deeplinks = parse_qs(raw, keep_blank_values=True).get("deeplink", [])
+        if len(deeplinks) == 1:
+            return _parse_expert_deeplink(deeplinks[0])
+        return ""
+    try:
+        outer = urlparse(raw)
+        if outer.scheme.lower() not in ("http", "https", "workbuddy") or outer.fragment:
+            return ""
+        if outer.scheme.lower() in ("http", "https"):
+            host = (outer.hostname or "").rstrip(".").lower()
+            if not any(host == suffix or host.endswith("." + suffix)
+                       for suffix in _TRUSTED_JUMP_HOST_SUFFIXES):
+                return ""
+        deeplinks = parse_qs(outer.query, keep_blank_values=True).get("deeplink", [])
+        if len(deeplinks) != 1:
+            return ""
+        return _parse_expert_deeplink(deeplinks[0])
+    except (TypeError, ValueError):
+        return ""
 
 
 def _as_int(value, default=0):
@@ -354,6 +446,7 @@ def get_normal_experts(count=10):
             normal.append({"id": e["id"], "name": _extract_name(e.get("displayName", e.get("name", {}))),
                            "industryId": meta.get("industryId", e.get("industryId", "")),
                            "profession": _extract_name(e.get("profession", "")),
+                           "version": e.get("version") or meta.get("version", ""),
                            "defaultInitPrompt": _extract_name(e.get("defaultInitPrompt", ""))})
     return normal[:count]
 
@@ -889,6 +982,32 @@ def prog(s, code):
     except Exception:
         pass
     return None, None, None
+
+
+def _growth_task_row(s, code):
+    """桌面成长任务原始行（含 jump_url / valid_end 等字段）；未下发返回 None。"""
+    try:
+        payload = s.get(BASE + "/v2/activity/growth/tasks", timeout=25,
+                        verify=False).json() or {}
+        for task in (payload.get("data") or {}).get("tasks", []):
+            if isinstance(task, dict) and task.get("task_code") == code:
+                return task
+    except Exception:
+        pass
+    return None
+
+
+def _expert_spec_for_task(s, code):
+    """返回内置专家定义；合法任务 jump_url 中的新 ID 优先于静态兜底。"""
+    stored = EXPERT_TASK_SPECS.get(code)
+    if not stored:
+        return {}
+    spec = dict(stored)
+    row = _growth_task_row(s, code) or {}
+    dynamic_id = _expert_id_from_jump_url(row.get("jump_url"))
+    if dynamic_id:
+        spec["id"] = dynamic_id
+    return spec
 
 
 def _claim_response_ok(response, payload):
@@ -1509,8 +1628,13 @@ def t_accept_all(s, uid, nick, log):
     ⚠️ 部分任务带前置条件：message 为 `prerequisite not met: <task_code>`（如 first_buddy
        表示该账号还没有 Buddy 实例），此时先补跑前置任务再重试登记。
     """
-    r = s.get(BASE + "/v2/activity/growth/tasks", timeout=25, verify=False).json()
-    todo = [t.get("task_code") for t in r.get("data", {}).get("tasks", [])
+    try:
+        r = s.get(BASE + "/v2/activity/growth/tasks", timeout=25, verify=False).json()
+        rows = (r.get("data") or {}).get("tasks") or []
+    except Exception as e:
+        log("   📋批量接受读取任务失败: %s" % str(e)[:60])
+        return
+    todo = [t.get("task_code") for t in rows
             if isinstance(t, dict) and t.get("accept_status") == "not_accepted"]
     if not todo:
         return
@@ -2935,26 +3059,34 @@ def t_lighthouse(s, uid, nick, log):
 VALORANT_EXPERT = {"id": "ex_xQHHD1u5Jkua", "name": "无畏契约拼豆专家", "version": "1.2.1"}
 
 
-def t_valorant(s, uid, nick, log):
-    """无畏契约拼豆专家：真实对话 + 专家召唤/使用桌面链。"""
-    st, cur, tgt = prog(s, "WorkBuddy_Valorant")
+def _run_local_expert_task(s, uid, nick, log, task_code, expert, conv_name="expert"):
+    """LOCAL 专家任务共用链：真实对话 + 召唤 + actual_use(mode:LOCAL)。"""
+    label = expert.get("name") or task_code
+    st, cur, tgt = prog(s, task_code)
     if st is None:
-        log("   无畏契约拼豆专家: 不在当前任务列表，跳过")
+        log("   %s: 不在当前任务列表，跳过" % label)
         return
     if st in ("completed", "claimed"):
-        log("   无畏契约拼豆专家: %s %s/%s" % (st, cur, tgt))
+        log("   %s: %s %s/%s" % (label, st, cur, tgt))
         return
-    expert = dict(VALORANT_EXPERT)
+    expert = dict(expert)
+    if not _EXPERT_ID_RE.fullmatch(str(expert.get("id") or "")):
+        log("   %s: 专家 ID 格式无效，跳过" % label)
+        return
     try:
-        for item in get_normal_experts(20):
-            if (item.get("id") or "") == expert["id"] or "无畏契约" in (item.get("name") or ""):
+        for item in get_normal_experts(100):
+            if (item.get("id") or "") == expert["id"]:
                 expert["id"] = item.get("id") or expert["id"]
                 expert["name"] = item.get("name") or expert["name"]
                 expert["version"] = item.get("version") or expert["version"]
                 break
     except Exception:
         pass
-    prompt = "你好，请简单介绍一下无畏契约拼豆玩法，回答OK即可"
+    if not _EXPERT_ID_RE.fullmatch(str(expert.get("id") or "")):
+        log("   %s: 专家市场返回了无效 ID，跳过" % label)
+        return
+    label = expert.get("name") or label
+    prompt = "你好，请简单介绍一下%s，回答OK即可" % label
     conv_id = ""
     mid = ""
     try:
@@ -2974,9 +3106,9 @@ def t_valorant(s, uid, nick, log):
             "expert": {"id": expert["id"], "name": expert["name"], "prompt": prompt[:50]},
             "tags": ["expert:" + expert["id"]],
         }}
-        conv_id, _txt, mid = webchat2(s, "valorant", prompt, meta)
+        conv_id, _txt, mid = webchat2(s, conv_name, prompt, meta)
     except Exception as exc:
-        log("   无畏契约拼豆专家: 对话异常 %s" % str(exc)[:50])
+        log("   %s: 对话异常 %s" % (label, str(exc)[:50]))
     if conv_id and mid:
         summon = [
             {"eventCode": "expert_summon_click", "id": expert["id"], "name": expert["name"],
@@ -3002,12 +3134,12 @@ def t_valorant(s, uid, nick, log):
         try:
             report_desktop_events(s, uid, nick, summon + chain)
         except Exception as exc:
-            log("   无畏契约拼豆专家: 桌面链上报失败 %s" % str(exc)[:50])
+            log("   %s: 桌面链上报失败 %s" % (label, str(exc)[:50]))
         time.sleep(4)
-        status = prog(s, "WorkBuddy_Valorant")[0]
+        status = prog(s, task_code)[0]
         if status in ("completed", "claimed"):
-            st, cur, tgt = prog(s, "WorkBuddy_Valorant")
-            log("   无畏契约拼豆专家: %s %s/%s" % (st, cur, tgt))
+            st, cur, tgt = prog(s, task_code)
+            log("   %s: %s %s/%s" % (label, st, cur, tgt))
             return
     try:
         request_id = mid or _new_message_id()
@@ -3026,9 +3158,27 @@ def t_valorant(s, uid, nick, log):
         ])
         time.sleep(3)
     except Exception as exc:
-        log("   无畏契约拼豆专家: 失败 %s" % str(exc)[:60])
-    st, cur, tgt = prog(s, "WorkBuddy_Valorant")
-    log("   无畏契约拼豆专家: %s %s/%s" % (st, cur, tgt))
+        log("   %s: 失败 %s" % (label, str(exc)[:60]))
+    st, cur, tgt = prog(s, task_code)
+    log("   %s: %s %s/%s" % (label, st, cur, tgt))
+
+
+def t_valorant(s, uid, nick, log):
+    """无畏契约拼豆专家：真实对话 + 专家召唤/使用桌面链。"""
+    expert = dict(VALORANT_EXPERT)
+    _run_local_expert_task(
+        s, uid, nick, log, "WorkBuddy_Valorant", expert, conv_name="valorant")
+
+
+def t_expert_use_task(s, uid, nick, log, task_code):
+    """新增 expert_use 任务：内置 ID 兜底，任务 jump_url 可安全覆盖专家 ID。"""
+    expert = _expert_spec_for_task(s, task_code)
+    if not expert:
+        log("   %s: 缺少专家任务配置，跳过" % task_code)
+        return
+    _run_local_expert_task(
+        s, uid, nick, log, task_code, expert,
+        conv_name="expert-" + str(expert.get("slug") or "task"))
 
 
 MP_HEADER = {"X-Client-Platform": "miniprogram",
@@ -3462,20 +3612,43 @@ def t_sequential_tasks_7(s, uid, nick, log):
 
 
 def t_unknown_tasks(s, uid, nick, log):
-    """任务列表体检：未覆盖的新任务提示 + 未完成任务的有效期预警
+    """任务列表体检：动态发现新任务 + 未完成任务的有效期预警
 
     服务端任务行带 valid_start / valid_end（如 Buddy_App_QQ 至 2026-10-10）——
     过期后就领不到了，所以对「未完成且 7 天内到期 / 已过期」的任务给出 ⏰ 提示。
+    默认与小程序口径都扫描，按 task_code 去重；单侧失败不阻断另一侧或后续补领。
     """
     known = {"create_canvas", "playbook_prompt", "RichMeow_Chat", "Library_read", "Expert_lighthouse",
              "Expert_Philanthropy", "Hp_Appearance", "Buddy_App", "Buddy_App_QQ", "Model_chat_GLM5.2",
              "black_cat", "Expert_team_use_3", "first_buddy", "chat_5", "skill_1", "expert_5",
              "template_5", "automation_1", "workstation_expert", "WorkBuddy_Valorant",
+             "expert_use_maidehao", "expert_use_douyinyin",
+             "expert_use_shangjia_xuanchuan", "expert_use_bowangwang",
              "Sequential_Tasks_1", "Sequential_Tasks_2", "Sequential_Tasks_3",
              "Sequential_Tasks_4", "Sequential_Tasks_5",
              "Sequential_Tasks_6", "Sequential_Tasks_7"}
-    r = s.get(BASE + "/v2/activity/growth/tasks", timeout=25, verify=False).json()
-    rows = r.get("data", {}).get("tasks", [])
+    rows_by_code = {}
+    errors = []
+    for headers, label in ((None, "桌面"), (MP_HEADER, "小程序")):
+        try:
+            r = s.get(BASE + "/v2/activity/growth/tasks", timeout=25, verify=False,
+                      headers=headers).json()
+            batch = (r.get("data") or {}).get("tasks") or []
+        except Exception as e:
+            errors.append("%s: %s" % (label, str(e)[:50]))
+            continue
+        for t in batch:
+            if not isinstance(t, dict):
+                continue
+            code = str(t.get("task_code") or "").strip()
+            if code and code not in rows_by_code:
+                rows_by_code[code] = t
+    if errors:
+        log("   ⚠️任务发现部分口径失败: %s" % "；".join(errors))
+    rows = list(rows_by_code.values())
+    if not rows:
+        log("   ⚠️任务发现未取得任何任务行")
+        return
     for t in rows:
         if not isinstance(t, dict):
             continue
@@ -3570,8 +3743,13 @@ def claim_ready_tasks(s, log):
     for code, item in merged.items():
         if not item["claimable"]:
             continue
-        use_mp = bool(item["mp"] or code in MP_TASK_CODES)
-        ok = _mp_claim(s, code, log) if use_mp else claim(s, code, log)
+        use_mp = False if code in DESKTOP_ONLY_TASK_CODES else bool(
+            item["mp"] or code in MP_TASK_CODES)
+        try:
+            ok = _mp_claim(s, code, log) if use_mp else claim(s, code, log)
+        except Exception as exc:
+            ok = False
+            log("   ⚠️领奖[%s]异常: %s" % (code, str(exc)[:60]))
         if ok:
             claimed += 1
         time.sleep(1)
@@ -3763,8 +3941,9 @@ def _accept_with_verify(s, code, log):
         except Exception:
             pass
         t = prog(s, code)
-        ast = t[0] if t else "not_accepted"
-        ok = (r.status_code == 200 and status == "accepted" and ast != "not_accepted")
+        ast = t[0] if t else None
+        ok = (r.status_code == 200 and status == "accepted"
+              and ast in ("accepted", "completed", "claimed"))
         if ok:
             return True
         if attempt > 1:
@@ -3863,6 +4042,13 @@ def run_account(idx, acc, do_desktop):
         % (prof.get("level", "?"), summary["checkin_streak"], streak.get("days", "?"), energy, signed))
     if QUERY_ONLY:
         return msgs, {"idx": idx, "note": acc.get("note", ""), "done": 0, "total": 0, "rest": [], "level": "?", "energy": "?"}
+    # 先补领一次，避免后续动作处理器看到 completed/claimed 就直接跳过；
+    # 全部动作结束后还会再扫一次，收取本轮新达标的奖励。
+    log("  🎁 ── 领奖预扫 ──")
+    try:
+        claim_ready_tasks(s, log)
+    except Exception as e:
+        log("   ⚠️领奖预扫异常: %s" % str(e)[:80])
     # 桌面任务先做（新账号必须先有真实桌面会话，否则接受会被回滚、遥测不计数）
     need_rich = prog(s, "RichMeow_Chat")[0] not in ("completed", "claimed")
     need_skill = prog(s, "skill_1")[0] not in ("completed", "claimed")
@@ -3890,7 +4076,10 @@ def run_account(idx, acc, do_desktop):
         _usage = {"chat_5", "model_chat_glm5.2", "desktop", "richmeow_chat", "skill_1", "black_cat",
                   "expert_5", "expert_team_use_3", "template_5", "create_canvas", "playbook_prompt",
                   "sequential_tasks_1", "sequential_tasks_3", "sequential_tasks_5",
-                  "automation_1", "library_read", "hp_appearance", "buddy_app", "buddy_app_qq"}
+                  "automation_1", "library_read", "hp_appearance", "buddy_app", "buddy_app_qq",
+                  "expert_lighthouse", "workbuddy_valorant", "expert_use_maidehao",
+                  "expert_use_douyinyin", "expert_use_shangjia_xuanchuan",
+                  "expert_use_bowangwang"}
         _kept = {t for t in (TASK_ONLY or _usage) if t not in TASK_SKIP}
         if not (_kept & _usage):
             log("   ⚠️ 未包含任何「使用类」任务 → 成长中心的今日活跃（热力墙）不会点亮")
@@ -3923,6 +4112,9 @@ def run_account(idx, acc, do_desktop):
     _run("夜猫子", ["black_cat"], lambda: t_black_cat(s, uid, nick, log))
     _run("腾讯轻量云专家", ["Expert_lighthouse"], lambda: t_lighthouse(s, uid, nick, log))
     _run("无畏契约拼豆专家", ["WorkBuddy_Valorant"], lambda: t_valorant(s, uid, nick, log))
+    for expert_code, expert_spec in EXPERT_TASK_SPECS.items():
+        _run(expert_spec["name"], [expert_code],
+             lambda code=expert_code: t_expert_use_task(s, uid, nick, log, code))
     _run("小程序对话", ["Sequential_Tasks_1"], lambda: t_sequential_tasks(s, uid, nick, log))
     _run("小程序专家对话", ["Sequential_Tasks_2"], lambda: t_sequential_tasks_2(s, uid, nick, log))
     _run("小程序对话5次", ["Sequential_Tasks_3"], lambda: t_sequential_tasks_3(s, uid, nick, log))
@@ -3943,7 +4135,10 @@ def run_account(idx, acc, do_desktop):
     _run("抽奖", ["lottery"], lambda: t_lottery(s, uid, nick, log))
     _run("礼包/补偿", ["gift"], lambda: t_gift_compensation(s, uid, nick, log))
     _run("工作台搭建师", ["workstation_expert"], lambda: t_workstation(s, uid, nick, log, tok))
-    t_unknown_tasks(s, uid, nick, log)   # 未覆盖任务检测不受过滤影响
+    try:
+        t_unknown_tasks(s, uid, nick, log)   # 未覆盖任务检测不受过滤影响
+    except Exception as e:
+        log("   ⚠️任务发现异常: %s" % str(e)[:80])
     # 领奖：按进度补领，不依赖 accept_status 的瞬时状态
     log("  🎁 ── 领奖 ──")
     claim_ready_tasks(s, log)
