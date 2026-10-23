@@ -123,4 +123,18 @@ jobs:
           # fork 特有内容（国际版步骤、wb_refresh_tokens.json）一律排在「Persist runtime state」
           # 之后，与上游改动的区段不重叠，正常不会冲突；万一冲突则失败并告警，交由人工处理
           git merge upstream/main --no-edit -m "chore: 同步上游 ${UPSTREAM}"
+
+          # ⚠️ GITHUB_TOKEN 是 GitHub App 身份，没有 `workflows` 权限：只要本次提交动了
+          # .github/workflows/**，push 就会被拒（"refusing to allow a GitHub App to create or
+          # update workflow ... without `workflows` permission"）。2026-10-23 上游 v3.16 在
+          # workbuddy.yml 加了一行 secret 传参，就是这个原因让 sync-upstream 失败。
+          # 对策：合并后把 workflow 目录回退成本 fork 自己的版本（merge 提交已吸收上游历史，
+          # 后续合并不会再冲突），上游对 workflow 的改动改为提示人工合入。
+          # 仅在真的产生合并提交时检查（快进合并没有 HEAD^1，不能用它做比较基）
+          if [ "$(git rev-list --count --merges HEAD^..HEAD)" != "0" ] \
+             && ! git diff --quiet HEAD^1 HEAD -- .github/workflows; then
+            echo "::warning::上游改动了 .github/workflows，已保留 fork 版本，请人工把改动合入"
+            git checkout HEAD^1 -- .github/workflows
+            git commit --amend --no-edit
+          fi
           git push origin HEAD:main
