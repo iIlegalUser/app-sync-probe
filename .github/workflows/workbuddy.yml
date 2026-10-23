@@ -56,6 +56,8 @@ jobs:
           WORKBUDDY_SKIP_TASKS: ${{ secrets.WORKBUDDY_SKIP_TASKS }}
           WORKBUDDY_MP_GAP: ${{ secrets.WORKBUDDY_MP_GAP }}
           WORKBUDDY_MAKEUP_MAX_PER_RUN: ${{ secrets.WORKBUDDY_MAKEUP_MAX_PER_RUN }}
+          # 上游 v3.16 新增：热力图未计分时是否补一次真实对话（不传则脚本默认 True）
+          WORKBUDDY_ACTIVITY_CHAT_FALLBACK: ${{ secrets.WORKBUDDY_ACTIVITY_CHAT_FALLBACK }}
         run: python workbuddy_daily.py
 
       # ⚠️ 仅在【私有仓库】中持久化令牌/福利期次状态；公开仓库会跳过，避免 RT 泄露
