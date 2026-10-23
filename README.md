@@ -60,6 +60,8 @@ python workbuddy_intl_daily.py --only 1             # 只跑第一个账号
 | `WORKBUDDY_INTL_TOKENS`（获取） | 纯 OAuth 账号（Google / GitHub / X）用 `python workbuddy_intl_login.py` 走设备授权登录，免手机号 |
 
 > ⚠️ 国际版登录态与国内版不通用：`workbuddy.ai` 的令牌在 `copilot.tencent.com` 刷不了，反之亦然。
+>
+> 🚫 每个国际版账号在刷新 RT 和写操作前会先做一次只读状态预检；命中 `11140 / request illegal` 时明确标记为账号受限并结束该账号本轮，不继续刷新或重试。
 > 带上 `refresh_token` 时脚本会自动续期并写回 `wb_intl_tokens.json`；只给 AT 时按短期令牌使用。
 > 活动未开放属于正常状态，不会当成失败；签到成功与活跃结果分开报告，任一发失败都不会把签到判成失败。
 > 活动未开启但活跃上报 / 网页会话成功时，会按「今日活跃已完成」报告（积分由上游异步发放）。
@@ -380,15 +382,17 @@ python daily_forward.py daily.log --wx
 | 16 | 设置自动化任务 | 真实 rrule 定时对象形状 + automation 事件上报 |
 | 17 | 领取Buddy | 领养链路（+300c+8e） |
 | 18 | `WorkBuddy_Valorant` | 无畏契约拼豆专家真实对话 + 召唤链 + `actual_use(mode:LOCAL)` |
-| 19 | `expert_use_maidehao` | 中国电商运营专家（`ex_GDl31WahyIH0`，v1.0.1） |
-| 20 | `expert_use_douyinyin` | 抖音策略师（`ex_FbY5nlWTqDod`） |
-| 21 | `expert_use_shangjia_xuanchuan` | 商家宣传页与海报设计师（`ex_Weo3x2EZuSDm`） |
-| 22 | `expert_use_bowangwang` | 直播电商教练（`ex_WZY136wV5aMt`） |
+| 19 | `expert_use_maidehao` | 卖得好（中国电商运营专家，`ex_GDl31WahyIH0`，v1.0.1） |
+| 20 | `expert_use_douyinyin` | 斗音音（抖音策略师，`ex_FbY5nlWTqDod`，v1.0.2） |
+| 21 | `expert_use_shangjia_xuanchuan` | 商家宣传设计师（商家宣传页与海报设计师，`ex_Weo3x2EZuSDm`，v1.6.0） |
+| 22 | `expert_use_bowangwang` | 播旺旺（直播电商教练，`ex_WZY136wV5aMt`，v1.0.2） |
 | — | ~~工作台搭建师~~ | ⚠️ **服务端已下线**（脚本仍兼容，出现时会自动处理） |
 
 > 🔗 **前置条件**：`first_buddy`（领取Buddy）是其余云端任务的登记前置——服务端对**没有 Buddy 实例**的账号会拒绝这些任务的 accept（`prerequisite not met: first_buddy (no buddy instance)`）。脚本已把领养链路提到云端任务最前面，并在 accept 报前置错误时**自动补跑前置再重试登记**。
 >
 > ⏳ **任务有效期**：部分任务由服务端下发 `valid_start` / `valid_end`（例如 `Buddy_App_QQ` 至 **2026-10-10**、`Hp_Appearance` 至 2026-11-02、`Expert_lighthouse` 至 2026-11-13、四个 `expert_use_*` 至 **2026-11-20**），过期后不再能领取。脚本每次运行会读取任务行并做两件事：`locked=true`（未到上线时间）直接跳过并给出解锁日；**未完成且 7 天内到期 / 已过期**的任务打印 ⏰ 提醒，避免白白错过奖励。
+>
+> 🔎 **三源任务发现**：桌面 `/v2/activity/growth/tasks`、小程序 `/v2`、等级族无 `/v2` 的 `/activity/growth/tasks` 并不互为超集。脚本每次合并三套清单；`first_chat / skill_installed / wechat_linked / expert_summoned / template_used` 只发现和分类，其中微信绑定明确标记为客户端操作。
 
 ### 📦 已归档（不占主脚本）
 
@@ -440,11 +444,11 @@ python daily_forward.py daily.log --wx
 
 > 🔥 国内版签到后会补发一条 `chat_request_send` 活跃事件，并以成长热力图 `score > 0` 确认真正计分。HTTP 200 但当天仍为 0 时，默认补一次真实对话再回读；仍未计分则不写本地完成标记，下轮继续重试。
 >
-> 🎯 专家体验任务：`WorkBuddy_Valorant` 与四个 `expert_use_*` 都走真实对话、召唤和 `actual_use(mode:LOCAL)` 链；任务 `jump_url` 里的合法官方专家深链可安全覆盖内置 ID。
+> 🎯 专家体验任务：`WorkBuddy_Valorant` 与 `expert_use_*` 族都走真实对话、召唤和 `actual_use(mode:LOCAL)` 链；市场按职业名分页搜索后必须用 `expert_id` 精确落位，昵称和职业名分别写入 `name / expertTitle`。任务 `jump_url` 里的合法官方专家深链可安全覆盖内置 ID，未来新增的 `expert_use_*` code 也能自动解析。
 >
 > 🎁 领奖按任务进度扫描，`progress.current >= progress.target` 即补领，不依赖可能延迟或回滚的 `accept_status`。
 >
-> ✅ 签到网络失败、空回执或业务错误不再打印成“签到成功”。企业形态仍按账号 `enterpriseId` 判定；`token_source` 只表示授权流程，不作为跳过任务的依据。
+> ✅ 签到网络失败、空回执或业务错误不再打印成“签到成功”。企业形态仍按账号 `enterpriseId` 判定；`11140 / request illegal` 单独归类为账号受限，不再冒充 Token 过期。`token_source` 只表示授权流程，不作为跳过任务的依据。
 
 ---
 
