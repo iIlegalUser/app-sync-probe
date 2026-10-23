@@ -1,0 +1,3 @@
+# probe
+name: probe
+on: [workflow_dispatch]
