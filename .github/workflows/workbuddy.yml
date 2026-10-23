@@ -108,6 +108,12 @@ jobs:
       - name: Merge upstream
         env:
           UPSTREAM: L0NE-6/WorkBuddy-Daily
+          # GitHub App 凭据：GITHUB_TOKEN 是 App 身份但**没有 workflows 权限**，推不了
+          # .github/workflows/**。这三个 secret 由用户自己新建的 App 提供，令牌只 downscope 到
+          # contents+workflows 两个写权限，见 tools/gh-app-token.cjs
+          APP_ID: ${{ secrets.SYNC_APP_ID }}
+          APP_INSTALLATION_ID: ${{ secrets.SYNC_APP_INSTALLATION_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
@@ -126,17 +132,18 @@ jobs:
           # 之后，与上游改动的区段不重叠，正常不会冲突；万一冲突则失败并告警，交由人工处理
           git merge upstream/main --no-edit -m "chore: 同步上游 ${UPSTREAM}"
 
-          # ⚠️ GITHUB_TOKEN 是 GitHub App 身份，没有 `workflows` 权限：只要本次提交动了
-          # .github/workflows/**，push 就会被拒（"refusing to allow a GitHub App to create or
-          # update workflow ... without `workflows` permission"）。2026-10-23 上游 v3.16 在
-          # workbuddy.yml 加了一行 secret 传参，就是这个原因让 sync-upstream 失败。
-          # 对策：合并后把 workflow 目录回退成本 fork 自己的版本（merge 提交已吸收上游历史，
-          # 后续合并不会再冲突），上游对 workflow 的改动改为提示人工合入。
-          # 仅在真的产生合并提交时检查（快进合并没有 HEAD^1，不能用它做比较基）
-          if [ "$(git rev-list --count --merges HEAD^..HEAD)" != "0" ] \
-             && ! git diff --quiet HEAD^1 HEAD -- .github/workflows; then
-            echo "::warning::上游改动了 .github/workflows，已保留 fork 版本，请人工把改动合入"
-            git checkout HEAD^1 -- .github/workflows
-            git commit --amend --no-edit
+          # 推送身份：GITHUB_TOKEN 推不动 workflow 文件（GitHub App 无 workflows 权限），
+          # 所以用 App installation token。没有配置 secret 时退回 GITHUB_TOKEN 并打警告：
+          # 届时若本次合并动了 .github/workflows，push 会被拒（这是预期告警，不是 bug）。
+          TOKEN=""
+          if [ -n "${APP_ID}" ] && [ -n "${APP_INSTALLATION_ID}" ] && [ -n "${APP_PRIVATE_KEY}" ]; then
+            TOKEN=$(node tools/gh-app-token.cjs) || TOKEN=""
+          fi
+          if [ -n "${TOKEN}" ]; then
+            echo "🔑 已换到 App installation token（含 workflows 权限）"
+            git push "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          else
+            echo "::warning::未配置 SYNC_APP_ID/SYNC_APP_INSTALLATION_ID/SYNC_APP_PRIVATE_KEY，退回 GITHUB_TOKEN；上游若改了 .github/workflows 本次会推送失败"
+            git push origin HEAD:main
           fi
           git push origin HEAD:main
